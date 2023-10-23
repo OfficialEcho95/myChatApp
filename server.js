@@ -6,6 +6,7 @@ const server = http.createServer(app);
 const { Server } = require("socket.io");
 const path = require('path');
 const publicPath = path.join(__dirname, "../myChatApp/socket/public");
+const {generateMessage} = require('./socket/utils/message')
 
 console.log('publicPath:', publicPath);
 
@@ -22,36 +23,28 @@ io.on('connection', (socket) => {
   console.log("A new user connected", socket.id);
 
   //emits message when a user is created
-  socket.emit("message", {
-    from: "Admin",
-    text: "Welcome to the chat group",
-    createdAt: new Date().getDate()
-  });
+  socket.emit("message",
+    generateMessage("Admin",
+      `${socket.id} welcome to the chat group`)
+  );
 
   //emits message when a new user joins the group
-  socket.broadcast.emit("message", {
-    from: "Admin",
-    text: `${socket.id} joined the chat group`,
-    createdAt: new Date().getDate()
-  });
+  socket.broadcast.emit("message",
+    generateMessage("Admin", `${socket.id} joined the chat group`)
+  );
 
   // socket.on('clientMessage', (message) => {
   //   console.log("Received message from client: ", message);
   // });
-  
-  //creates and broadcasts message to all users
-    socket.on('message', (message) => {   
-      io.emit('Bmessage', {
-      from: message.from,
-      text: message.text,
-      createdAt:new Date().getDate()
-      })
-  });
 
+  //creates and broadcasts message to all users
+  socket.on('message', (message) => {
+    io.emit('Bmessage', generateMessage(message.from, message.text));
+  });
   //message for when a user disconnects
-    socket.on('disconnect', () => {
-      console.log("User was disconnected");
-    });
+  socket.on('disconnect', () => {
+    console.log("User was disconnected");
+  });
 });
 
 app.get('/', (req, res) => {
