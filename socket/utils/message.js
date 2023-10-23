@@ -1,9 +1,9 @@
 //this function generates the message emitted and received
-const generateMessage = (from, text) => {
+function generateMessage(from, text){
     return {
         from,
         text,
-        createdAt: new Date().getTime()
+        createdAt: new Date().d
     }
 }
 
