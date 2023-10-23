@@ -1,0 +1,386 @@
+const express = require("express");
+const http = require('http');
+const { connectToDatabase, closeDatabaseConnection } = require('./db')
+const bcrypt = require('bcrypt');
+const app = express();
+const server = http.createServer(app);
+const port = 3000;
+const session = require('express-session');
+var MongoDBStore = require('connect-mongodb-session')(session);
+const uri = require('./dbDetails');
+
+app.use(express.json());
+
+var store = new MongoDBStore({
+    uri: uri,
+    databaseName: 'chatAppdb',
+    collection: 'mySessions'
+});
+
+app.use(session({
+    secret: 'This is a secret',
+    cookie: {
+        maxAge: 1000 * 60 * 60 * 24
+    },
+    store: store,
+    resave: false,
+    saveUninitialized: true
+}));
+
+const isAuth = (req, res, next) => {
+    req.session.isAuth ? next() : res.json({ message: "Kindly login" });
+}
+
+async function startServer() {
+
+    try {
+        const db = await connectToDatabase();
+
+        app.get('/', function (req, res) {
+            res.send('Hello ' + JSON.stringify(req.session.id));
+        });
+
+
+        //EJS as the view engine
+        app.set("view engine", "ejs");
+
+        //route to render the dashboard
+        app.get("/dashboard", isAuth, (req, res) => {
+            res.render("dashboard");
+        });
+
+
+
+        //route to handle user creation
+        app.post('/register', async (req, res) => {
+            try {
+
+                const requiredFields = ['username', 'name', 'email', 'password'];
+                for (const field of requiredFields) {
+                    if (!req.body[field]) {
+                        res.status(400).send(`Missing required field: ${field}`);
+                        return;
+                    }
+                }
+                const username_taken = await db.collection('data').findOne({ username: req.body.username });
+                const email_exists = await db.collection('data').findOne({ email: req.body.email });
+
+                if (username_taken) {
+                    console.log(`username ${req.body.username} taken`);
+                    return res.status(400).json({ message: `Username ${req.body.username} taken` });
+                }
+
+                if (email_exists) {
+                    console.log(`Email ${req.body.email} taken`);
+                    return res.status(400).json({ message: `Email ${req.body.email} taken` });
+                }
+
+                const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
+                const newUser = {
+                    username: req.body.username,
+                    name: req.body.name,
+                    email: req.body.email,
+                    password: hashedPassword,
+                };
+
+                await db.collection('data').insertOne(newUser);
+                console.log(`User ${newUser.name} added successfully`);
+                res.status(201).json({ message: "User registration successful" });
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).send('Internal Server Error');
+            }
+        });
+
+
+        router.post('/login', async (req, res) => {
+            let { email, password } = req.body;
+            try {
+                const user = await db.collection('data').findOne({ email });
+
+                if (!user) {
+                    console.log("Invalid email");
+                    return res.status(500).send('Invalid credential');
+                }
+
+                const passwordMatch = await bcrypt.compare(password, user.password);
+
+                if (!passwordMatch) {
+                    res.status(401).json({ message: 'Invalid credentials' });
+                    return;
+                }
+
+                req.session.isAuth = true;
+                res.redirect('/dashboard');
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).send('Internal Server Error');
+            }
+        });
+
+
+        app.get('/logout', async (req, res) => {
+            req.session.destroy((err) => {
+                if (err) {
+                    console.error(err);
+                    res.status(500).send('Internal Server Error');
+                } else {
+                    res.status(200).json({})
+                }
+            });
+        });
+        
+
+        // Start the server
+        server.listen(port, () => {
+            console.log(`Server is running on http://localhost:${port}`);
+        });
+    } catch (error) {
+        console.error('Error starting server:', error);
+    }
+}
+
+async function stopServer() {
+    await closeDatabaseConnection();
+    server.close();
+}
+
+startServer();
+
+// Gracefully shut down the server and close the database connection on termination
+process.on('SIGINT', async () => {
+    console.log('Received SIGINT. Closing server and database connection...');
+    await stopServer();
+    process.exit();
+});
+
+
+module.exports = {
+    startServer,
+    stopServer
+}
+
+
+//jwt
+app.post('/login', async (req, res) => {
+    let { email, password } = req.body;
+    try {
+        const user = await db.collection('data').findOne({ email });
+        if (!user) {
+            console.log("Invalid email");
+            return res.status(500).send('Invalid credential');
+        }
+
+        const passwordMatch = await bcrypt.compare(password, user.password);
+
+        if (!passwordMatch) {
+            res.status(401).json({ message: 'Invalid credentials' });
+            return;
+        }
+
+        req.session.user = { userId: user._id, username: user.username }
+        const token = jwt.sign({ userId: user._id }, 'your-secret-key', { expiresIn: '1h' });
+
+        console.log(token);
+        res.header('Authorization', `Bearer ${token}`);
+        res.status(200).json({ message: "login successful" });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+
+
+const express = require("express");
+const http = require('http');
+const { connectToDatabase, closeDatabaseConnection } = require('./db')
+const bcrypt = require('bcrypt');
+const app = express();
+const server = http.createServer(app);
+const port = 3000;
+const session = require('express-session');
+const MongoDBStore = require('connect-mongodb-session')(session);
+const uri = require('./dbDetails');
+const jwt = require('jsonwebtoken');
+const router = express.Router();
+const path = require('path');
+
+app.use(express.json());
+app.use('/api', router);
+
+const store = new MongoDBStore({
+    uri: uri,
+    databaseName: 'chatAppdb',
+    collection: 'mySessions'
+});
+
+app.use(session({
+    secret: 'This is a secret',
+    cookie: {
+        maxAge: 1000 * 60 * 60 * 24
+    },
+    store: store,
+    resave: false,
+    saveUninitialized: true,
+}));
+
+
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'views')));
+
+app.set("view engine", "ejs");
+
+
+app.get('/', function (req, res) {
+    res.send('Hello ' + JSON.stringify(req.session));
+});
+
+
+
+app.get('/register', (req, res) => {
+    res.render('registration');
+});
+
+app.get('/login', (req, res) => {
+    res.render('login');
+});
+
+const authMiddleware = (req, res, next) => {
+    const token = req.header('Authorization');
+
+    if (!token) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    try {
+        // Verify the token
+        const decoded = jwt.verify(token, 'your-secret-key');
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.status(401).json({ message: 'Invalid token' });
+    }
+};
+
+app.get("/dashboard", authMiddleware, (req, res) => {
+    console.log("User is authenticated:", req.user);
+    res.render("dashboard");
+});
+
+
+async function startServer() {
+    try {
+        const db = await connectToDatabase();
+
+        app.post('/register', async (req, res) => {
+            try {
+                const requiredFields = ['username', 'name', 'email', 'password'];
+                for (const field of requiredFields) {
+                    if (!req.body[field]) {
+                        res.status(400).send(`Missing required field: ${field}`);
+                        return;
+                    }
+                }
+                const username_taken = await db.collection('data').findOne({ username: req.body.username });
+                const email_exists = await db.collection('data').findOne({ email: req.body.email });
+
+                if (username_taken) {
+                    console.log(`username ${req.body.username} taken`);
+                    return res.status(400).json({ message: `Username ${req.body.username} taken` });
+                }
+
+                if (email_exists) {
+                    console.log(`Email ${req.body.email} taken`);
+                    return res.status(400).json({ message: `Email ${req.body.email} taken` });
+                }
+
+                const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
+                const newUser = {
+                    username: req.body.username,
+                    name: req.body.name,
+                    email: req.body.email,
+                    password: hashedPassword,
+                };
+
+                await db.collection('data').insertOne(newUser);
+                console.log(`User ${newUser.name} added successfully`);
+                res.status(201).json({ message: "User registration successful" });
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).send('Internal Server Error');
+            }
+        });
+
+        router.post('/login', async (req, res) => {
+
+            let { email, password } = req.body;
+            try {
+                console.log("Body of request: ", await req.body);
+                const user = await db.collection('data').findOne({ email });
+                if (!user) {
+                    console.log("Invalid email");
+                    return res.status(500).send('Invalid credential');
+                }
+
+                const passwordMatch = await bcrypt.compare(password, user.password);
+
+                if (!passwordMatch) {
+                    res.status(401).json({ message: 'Invalid credentials' });
+                    return;
+                }
+
+                const token = jwt.sign({ userId: user._id }, 'your-secret-key', { expiresIn: '1h' });
+                
+                res.status(201).json({ message: 'Login successful', token, redirect: '/dashboard' });
+        
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).send('Internal Server Error');
+            }
+        })
+
+        app.get('/logout', async (req, res) => {
+            req.session.destroy((err) => {
+                if (err) {
+                    console.error(err);
+                    res.status(500).send('Internal Server Error');
+                } else {
+                    res.status(200).json({ message: "logged out" });
+                }
+            });
+        });
+
+        server.listen(port, () => {
+            console.log(`Server is running on http://localhost:${port}`);
+        });
+    } catch (error) {
+        console.error('Error starting server:', error);
+    }
+}
+
+async function stopServer() {
+    await closeDatabaseConnection();
+    server.close();
+}
+
+startServer();
+
+process.on('SIGINT', async () => {
+    console.log('Received SIGINT. Closing server and database connection...');
+    await stopServer();
+    process.exit();
+});
+
+module.exports = {
+    startServer,
+    stopServer
+};
