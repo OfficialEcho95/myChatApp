@@ -3,8 +3,16 @@ function generateMessage(from, text){
     return {
         from,
         text,
-        createdAt: new Date().d
+        createdAt: new Date().getTime()
     }
 }
 
-module.exports = { generateMessage };
+function generateLocationMessage(from, lat, lon) {
+    return {
+        from,
+        url: `https://google.com/maps?q=${lat},${lon}`,
+        createdAt: new Date().getTime()
+    }
+}
+
+module.exports = { generateMessage, generateLocationMessage };

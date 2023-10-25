@@ -6,7 +6,7 @@ const server = http.createServer(app);
 const { Server } = require("socket.io");
 const path = require('path');
 const publicPath = path.join(__dirname, "../myChatApp/socket/public");
-const {generateMessage} = require('./socket/utils/message')
+const {generateMessage, generateLocationMessage} = require('./socket/utils/message')
 
 console.log('publicPath:', publicPath);
 
@@ -28,6 +28,19 @@ io.on('connection', (socket) => {
       `${socket.id} welcome to the chat group`)
   );
 
+  socket.on("message", (message) => {
+    console.log(message);
+    io.emit('message', generateMessage(message.from, message.text));
+  });
+
+  socket.on('locationMessage', (message) => {
+    io.emit('message', generateLocationMessage(
+      "Admin",
+      message.lat, 
+      message.lon
+    ));
+  });
+
   //emits message when a new user joins the group
   socket.broadcast.emit("message",
     generateMessage("Admin", `${socket.id} joined the chat group`)
@@ -38,8 +51,11 @@ io.on('connection', (socket) => {
   // });
 
   //creates and broadcasts message to all users
-  socket.on('message', (message) => {
+  //callback desc below
+    socket.on('message', (message) => {
     io.emit('Bmessage', generateMessage(message.from, message.text));
+    //now callback here is an acknowledgment telling the 
+    //client that the server got the message
   });
   //message for when a user disconnects
   socket.on('disconnect', () => {
